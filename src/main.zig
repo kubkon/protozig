@@ -5,7 +5,7 @@ const io = std.io;
 const mem = std.mem;
 const process = std.process;
 
-const Tokenizer = @import("Tokenizer.zig");
+const protozig = @import("lib.zig");
 
 var gpa_alloc = std.heap.GeneralPurposeAllocator(.{}){};
 const gpa = gpa_alloc.allocator();
@@ -49,15 +49,14 @@ pub fn main() !void {
     defer proto_file.close();
     const raw_contents = try proto_file.readToEndAlloc(arena, std.math.maxInt(u32));
 
-    var tokenizer = Tokenizer{
-        .buffer = raw_contents,
-    };
-    while (true) {
-        var next_tok = tokenizer.next();
-        if (next_tok.id == .eof) {
-            break;
-        }
-        try stdout.print("{s}@{d}..{d}\n", .{ next_tok.id, next_tok.loc.start, next_tok.loc.end });
-        try stdout.print("   | {s}\n", .{tokenizer.buffer[next_tok.loc.start..next_tok.loc.end]});
+    const res = try protozig.generate(gpa, raw_contents);
+    switch (res) {
+        .ok => |code| {
+            defer gpa.free(code);
+        },
+        .err => |err_msg| {
+            try stderr.writeAll(err_msg);
+            try stderr.writeByte('\n');
+        },
     }
 }

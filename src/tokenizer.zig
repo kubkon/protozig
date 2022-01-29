@@ -1,11 +1,6 @@
-const Tokenizer = @This();
-
 const std = @import("std");
 const log = std.log;
 const testing = std.testing;
-
-buffer: []const u8,
-index: usize = 0,
 
 pub const Token = struct {
     id: Id,
@@ -96,172 +91,177 @@ pub const TokenIterator = struct {
     }
 };
 
-pub fn next(self: *Tokenizer) Token {
-    var result = Token{
-        .id = .eof,
-        .loc = .{
-            .start = self.index,
-            .end = undefined,
-        },
-    };
+pub const Tokenizer = struct {
+    buffer: []const u8,
+    index: usize = 0,
 
-    var state: union(enum) {
-        start,
-        identifier,
-        string_literal,
-        int_literal,
-        slash,
-        line_comment,
-        multiline_comment,
-        multiline_comment_end,
-    } = .start;
+    pub fn next(self: *Tokenizer) Token {
+        var result = Token{
+            .id = .eof,
+            .loc = .{
+                .start = self.index,
+                .end = undefined,
+            },
+        };
 
-    while (self.index < self.buffer.len) : (self.index += 1) {
-        const c = self.buffer[self.index];
-        switch (state) {
-            .start => switch (c) {
-                ' ', '\t', '\n', '\r' => {
-                    result.loc.start = self.index + 1;
+        var state: union(enum) {
+            start,
+            identifier,
+            string_literal,
+            int_literal,
+            slash,
+            line_comment,
+            multiline_comment,
+            multiline_comment_end,
+        } = .start;
+
+        while (self.index < self.buffer.len) : (self.index += 1) {
+            const c = self.buffer[self.index];
+            switch (state) {
+                .start => switch (c) {
+                    ' ', '\t', '\n', '\r' => {
+                        result.loc.start = self.index + 1;
+                    },
+                    'a'...'z', 'A'...'Z', '_' => {
+                        state = .identifier;
+                        result.id = .identifier;
+                    },
+                    '{' => {
+                        result.id = .l_brace;
+                        self.index += 1;
+                        break;
+                    },
+                    '}' => {
+                        result.id = .r_brace;
+                        self.index += 1;
+                        break;
+                    },
+                    '[' => {
+                        result.id = .l_sbrace;
+                        self.index += 1;
+                        break;
+                    },
+                    ']' => {
+                        result.id = .r_sbrace;
+                        self.index += 1;
+                        break;
+                    },
+                    '(' => {
+                        result.id = .l_paren;
+                        self.index += 1;
+                        break;
+                    },
+                    ')' => {
+                        result.id = .r_paren;
+                        self.index += 1;
+                        break;
+                    },
+                    ';' => {
+                        result.id = .semicolon;
+                        self.index += 1;
+                        break;
+                    },
+                    '.' => {
+                        result.id = .dot;
+                        self.index += 1;
+                        break;
+                    },
+                    ',' => {
+                        result.id = .comma;
+                        self.index += 1;
+                        break;
+                    },
+                    '0'...'9' => {
+                        state = .int_literal;
+                        result.id = .int_literal;
+                    },
+                    '=' => {
+                        result.id = .equal;
+                        self.index += 1;
+                        break;
+                    },
+                    '/' => {
+                        state = .slash;
+                    },
+                    '"' => {
+                        result.id = .string_literal;
+                        state = .string_literal;
+                    },
+                    else => {
+                        result.id = .invalid;
+                        result.loc.end = self.index;
+                        self.index += 1;
+                        return result;
+                    },
                 },
-                'a'...'z', 'A'...'Z', '_' => {
-                    state = .identifier;
-                    result.id = .identifier;
+                .slash => switch (c) {
+                    '/' => {
+                        state = .line_comment;
+                    },
+                    '*' => {
+                        state = .multiline_comment;
+                    },
+                    else => {
+                        result.id = .invalid;
+                        self.index += 1;
+                        break;
+                    },
                 },
-                '{' => {
-                    result.id = .l_brace;
-                    self.index += 1;
-                    break;
+                .line_comment => switch (c) {
+                    '\n' => {
+                        state = .start;
+                        result.loc.start = self.index + 1;
+                    },
+                    else => {},
                 },
-                '}' => {
-                    result.id = .r_brace;
-                    self.index += 1;
-                    break;
+                .multiline_comment => switch (c) {
+                    '*' => {
+                        state = .multiline_comment_end;
+                    },
+                    else => {},
                 },
-                '[' => {
-                    result.id = .l_sbrace;
-                    self.index += 1;
-                    break;
+                .multiline_comment_end => switch (c) {
+                    '/' => {
+                        state = .start;
+                        result.loc.start = self.index + 1;
+                    },
+                    else => {
+                        state = .multiline_comment;
+                    },
                 },
-                ']' => {
-                    result.id = .r_sbrace;
-                    self.index += 1;
-                    break;
+                .identifier => switch (c) {
+                    'a'...'z', 'A'...'Z', '_', '0'...'9' => {},
+                    else => {
+                        if (Token.getKeyword(self.buffer[result.loc.start..self.index])) |id| {
+                            result.id = id;
+                        }
+                        break;
+                    },
                 },
-                '(' => {
-                    result.id = .l_paren;
-                    self.index += 1;
-                    break;
+                .int_literal => switch (c) {
+                    '0'...'9' => {},
+                    else => {
+                        break;
+                    },
                 },
-                ')' => {
-                    result.id = .r_paren;
-                    self.index += 1;
-                    break;
+                .string_literal => switch (c) {
+                    '"' => {
+                        self.index += 1;
+                        break;
+                    },
+                    else => {}, // TODO validate characters/encoding
                 },
-                ';' => {
-                    result.id = .semicolon;
-                    self.index += 1;
-                    break;
-                },
-                '.' => {
-                    result.id = .dot;
-                    self.index += 1;
-                    break;
-                },
-                ',' => {
-                    result.id = .comma;
-                    self.index += 1;
-                    break;
-                },
-                '0'...'9' => {
-                    state = .int_literal;
-                    result.id = .int_literal;
-                },
-                '=' => {
-                    result.id = .equal;
-                    self.index += 1;
-                    break;
-                },
-                '/' => {
-                    state = .slash;
-                },
-                '"' => {
-                    result.id = .string_literal;
-                    state = .string_literal;
-                },
-                else => {
-                    result.id = .invalid;
-                    result.loc.end = self.index;
-                    self.index += 1;
-                    return result;
-                },
-            },
-            .slash => switch (c) {
-                '/' => {
-                    state = .line_comment;
-                },
-                '*' => {
-                    state = .multiline_comment;
-                },
-                else => {
-                    result.id = .invalid;
-                    self.index += 1;
-                    break;
-                },
-            },
-            .line_comment => switch (c) {
-                '\n' => {
-                    state = .start;
-                    result.loc.start = self.index + 1;
-                },
-                else => {},
-            },
-            .multiline_comment => switch (c) {
-                '*' => {
-                    state = .multiline_comment_end;
-                },
-                else => {},
-            },
-            .multiline_comment_end => switch (c) {
-                '/' => {
-                    state = .start;
-                    result.loc.start = self.index + 1;
-                },
-                else => {
-                    state = .multiline_comment;
-                },
-            },
-            .identifier => switch (c) {
-                'a'...'z', 'A'...'Z', '_', '0'...'9' => {},
-                else => {
-                    if (Token.getKeyword(self.buffer[result.loc.start..self.index])) |id| {
-                        result.id = id;
-                    }
-                    break;
-                },
-            },
-            .int_literal => switch (c) {
-                '0'...'9' => {},
-                else => {
-                    break;
-                },
-            },
-            .string_literal => switch (c) {
-                '"' => {
-                    self.index += 1;
-                    break;
-                },
-                else => {}, // TODO validate characters/encoding
-            },
+            }
         }
-    }
 
-    if (result.id == .eof) {
-        result.loc.start = self.index;
-    }
+        if (result.id == .eof) {
+            result.loc.start = self.index;
+        }
 
-    result.loc.end = self.index;
-    return result;
-}
+        result.loc.end = self.index;
+        return result;
+    }
+};
 
 fn testExpected(source: []const u8, expected: []const Token.Id) !void {
     var tokenizer = Tokenizer{
