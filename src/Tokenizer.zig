@@ -27,12 +27,16 @@ pub const Token = struct {
     pub const Id = enum {
         // zig fmt: off
         eof,
+
+        invalid,
         l_brace,      // {
         r_brace,      // }
         semicolon,    // ;
         equal,        // =
+
         int_literal,  // 1
         identifier,   // ident
+
         keyword_enum, // enum
         // zig fmt: on
     };
@@ -82,7 +86,15 @@ pub fn next(self: *Tokenizer) Token {
         },
     };
 
-    var state: union(enum) { start, identifier, int_literal } = .start;
+    var state: union(enum) {
+        start,
+        identifier,
+        int_literal,
+        slash,
+        line_comment,
+        multiline_comment,
+        multiline_comment_end,
+    } = .start;
 
     while (self.index < self.buffer.len) : (self.index += 1) {
         const c = self.buffer[self.index];
@@ -119,7 +131,45 @@ pub fn next(self: *Tokenizer) Token {
                     self.index += 1;
                     break;
                 },
+                '/' => {
+                    state = .slash;
+                },
                 else => {},
+            },
+            .slash => switch (c) {
+                '/' => {
+                    state = .line_comment;
+                },
+                '*' => {
+                    state = .multiline_comment;
+                },
+                else => {
+                    result.id = .invalid;
+                    self.index += 1;
+                    break;
+                },
+            },
+            .line_comment => switch (c) {
+                '\n' => {
+                    state = .start;
+                    result.loc.start = self.index + 1;
+                },
+                else => {},
+            },
+            .multiline_comment => switch (c) {
+                '*' => {
+                    state = .multiline_comment_end;
+                },
+                else => {},
+            },
+            .multiline_comment_end => switch (c) {
+                '/' => {
+                    state = .start;
+                    result.loc.start = self.index + 1;
+                },
+                else => {
+                    state = .multiline_comment;
+                },
             },
             .identifier => switch (c) {
                 'a'...'z', 'A'...'Z', '_', '0'...'9' => {},
@@ -159,10 +209,18 @@ fn testExpected(source: []const u8, expected: []const Token.Id) !void {
 
 test "simple enum" {
     try testExpected(
+        \\/*
+        \\ * Some cool kind
+        \\ */
         \\enum SomeKind {
+        \\  // This generally means none
         \\  NONE = 0;
+        \\  // This means A
+        \\  // and only A
         \\  A = 1;
+        \\  /* B * * * * */
         \\  B = 2;
+        \\  // And this one is just a C
         \\  C = 3;
         \\}
     , &[_]Token.Id{
