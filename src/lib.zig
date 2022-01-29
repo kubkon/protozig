@@ -2,14 +2,16 @@ const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;
 
-pub const tokenizer = @import("tokenizer.zig");
+pub const generator = @import("generator.zig");
 pub const parser = @import("parser.zig");
+pub const tokenizer = @import("tokenizer.zig");
 
 test {
     testing.refAllDecls(@This());
 }
 
 const Allocator = mem.Allocator;
+const Generator = generator.Generator;
 const Parser = parser.Parser;
 const Scope = parser.Scope;
 const Tokenizer = tokenizer.Tokenizer;
@@ -22,7 +24,7 @@ pub const Result = union(enum) {
     err: []const u8,
 };
 
-pub fn generate(gpa: Allocator, source: []const u8) error{OutOfMemory}!Result {
+pub fn generate(gpa: Allocator, source: []const u8) !Result {
     var arena_alloc = std.heap.ArenaAllocator.init(gpa);
     defer arena_alloc.deinit();
     const arena = arena_alloc.allocator();
@@ -59,13 +61,21 @@ pub fn generate(gpa: Allocator, source: []const u8) error{OutOfMemory}!Result {
         },
     }
 
-    // TODO after parsing, convert TokenIndexes into actual values
-    // and check for any errors...
-
     var code = std.ArrayList(u8).init(gpa);
     defer code.deinit();
 
-    // TODO emitter goes here...
+    var ggenerator = Generator{
+        .arena = arena,
+        .buffer = source,
+        .tokens = tokens.items,
+        .parse_scope = &scope,
+    };
+    switch (try ggenerator.generate(&code)) {
+        .ok => {},
+        .err => |err_msg| {
+            return Result{ .err = err_msg.msg };
+        },
+    }
 
     return Result{ .ok = code.toOwnedSlice() };
 }

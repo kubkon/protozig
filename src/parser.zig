@@ -19,7 +19,7 @@ const Loc = struct {
     end: TokenIndex,
 };
 
-const Node = union(enum) {
+pub const Node = union(enum) {
     @"enum": EnumNode,
 };
 
@@ -28,7 +28,7 @@ const EnumNode = struct {
     name: TokenIndex,
     fields: std.ArrayListUnmanaged(FieldTuple) = .{},
 
-    pub const FieldTuple = std.meta.Tuple(&[_]type{ TokenIndex, TokenIndex });
+    const FieldTuple = std.meta.Tuple(&[_]type{ TokenIndex, TokenIndex });
 };
 
 const ParseError = error{
@@ -123,7 +123,7 @@ pub const Parser = struct {
             }
         }
 
-        log.debug("enum := {}", .{enum_node});
+        // log.debug("enum := {}", .{enum_node});
 
         try parser.scope.nodes.append(parser.arena, Node{
             .@"enum" = enum_node,

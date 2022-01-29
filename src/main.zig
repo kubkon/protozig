@@ -53,6 +53,8 @@ pub fn main() !void {
     switch (res) {
         .ok => |code| {
             defer gpa.free(code);
+            try stdout.writeAll(code);
+            try stdout.writeByte('\n');
         },
         .err => |err_msg| {
             try stderr.writeAll(err_msg);
