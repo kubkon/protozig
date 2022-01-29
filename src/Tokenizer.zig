@@ -18,6 +18,12 @@ pub const Token = struct {
 
     pub const keywords = std.ComptimeStringMap(Id, .{
         .{ "enum", .keyword_enum },
+        .{ "message", .keyword_message },
+        .{ "repeated", .keyword_repeated },
+        .{ "oneof", .keyword_oneof },
+        .{ "syntax", .keyword_syntax },
+        .{ "package", .keyword_package },
+        .{ "import", .keyword_import },
     });
 
     pub fn getKeyword(bytes: []const u8) ?Id {
@@ -29,15 +35,22 @@ pub const Token = struct {
         eof,
 
         invalid,
-        l_brace,      // {
-        r_brace,      // }
-        semicolon,    // ;
-        equal,        // =
+        l_brace,          // {
+        r_brace,          // }
+        semicolon,        // ;
+        equal,            // =
 
-        int_literal,  // 1
-        identifier,   // ident
+        string_literal,   // "something"
+        int_literal,      // 1
+        identifier,       // ident
 
-        keyword_enum, // enum
+        keyword_enum,     // enum { ... }
+        keyword_message,  // message { ... }
+        keyword_repeated, // repeated Type field = 5;
+        keyword_oneof,    // oneof { ... }
+        keyword_syntax,   // syntax = "proto3";
+        keyword_package,  // package my_pkg;
+        keyword_import,   // import "other.proto";
         // zig fmt: on
     };
 };
@@ -89,6 +102,7 @@ pub fn next(self: *Tokenizer) Token {
     var state: union(enum) {
         start,
         identifier,
+        string_literal,
         int_literal,
         slash,
         line_comment,
@@ -133,6 +147,10 @@ pub fn next(self: *Tokenizer) Token {
                 },
                 '/' => {
                     state = .slash;
+                },
+                '"' => {
+                    result.id = .string_literal;
+                    state = .string_literal;
                 },
                 else => {},
             },
@@ -186,6 +204,13 @@ pub fn next(self: *Tokenizer) Token {
                     break;
                 },
             },
+            .string_literal => switch (c) {
+                '"' => {
+                    self.index += 1;
+                    break;
+                },
+                else => {}, // TODO validate characters/encoding
+            },
         }
     }
 
@@ -201,8 +226,13 @@ fn testExpected(source: []const u8, expected: []const Token.Id) !void {
     var tokenizer = Tokenizer{
         .buffer = source,
     };
-    for (expected) |exp| {
+    for (expected) |exp, i| {
         const token = tokenizer.next();
+        if (exp != token.id) {
+            const stderr = std.io.getStdErr().writer();
+            try stderr.print("Tokens don't match: (exp) {} != (giv) {} at pos {d}\n", .{ exp, token.id, i + 1 });
+            return error.TestExpectedEqual;
+        }
         try testing.expectEqual(exp, token.id);
     }
 }
@@ -212,7 +242,8 @@ test "simple enum" {
         \\/*
         \\ * Some cool kind
         \\ */
-        \\enum SomeKind {
+        \\enum SomeKind
+        \\{
         \\  // This generally means none
         \\  NONE = 0;
         \\  // This means A
@@ -224,26 +255,15 @@ test "simple enum" {
         \\  C = 3;
         \\}
     , &[_]Token.Id{
-        .keyword_enum,
-        .identifier,
+        // zig fmt: off
+        .keyword_enum, .identifier,
         .l_brace,
-        .identifier,
-        .equal,
-        .int_literal,
-        .semicolon,
-        .identifier,
-        .equal,
-        .int_literal,
-        .semicolon,
-        .identifier,
-        .equal,
-        .int_literal,
-        .semicolon,
-        .identifier,
-        .equal,
-        .int_literal,
-        .semicolon,
+            .identifier, .equal, .int_literal, .semicolon,
+            .identifier, .equal, .int_literal, .semicolon,
+            .identifier, .equal, .int_literal, .semicolon,
+            .identifier, .equal, .int_literal, .semicolon,
         .r_brace,
+        // zig fmt: on
     });
 }
 
@@ -254,25 +274,111 @@ test "simple enum - weird formatting" {
         \\       B = 2; C = 3;
         \\}
     , &[_]Token.Id{
-        .keyword_enum,
-        .identifier,
+        // zig fmt: off
+        .keyword_enum, .identifier,
         .l_brace,
-        .identifier,
-        .equal,
-        .int_literal,
-        .semicolon,
-        .identifier,
-        .equal,
-        .int_literal,
-        .semicolon,
-        .identifier,
-        .equal,
-        .int_literal,
-        .semicolon,
-        .identifier,
-        .equal,
-        .int_literal,
-        .semicolon,
+            .identifier, .equal, .int_literal, .semicolon,
+            .identifier, .equal, .int_literal, .semicolon,
+            .identifier, .equal, .int_literal, .semicolon,
+            .identifier, .equal, .int_literal, .semicolon,
         .r_brace,
+        // zig fmt: on
+    });
+}
+
+test "simple message" {
+    try testExpected(
+        \\message MyMessage
+        \\{
+        \\  Ptr ptr_field = 1;
+        \\  int32 ptr_len = 2;
+        \\}
+    , &[_]Token.Id{
+        // zig fmt: off
+        .keyword_message, .identifier,
+        .l_brace,
+            .identifier, .identifier, .equal, .int_literal, .semicolon,
+            .identifier, .identifier, .equal, .int_literal, .semicolon,
+        .r_brace,
+        // zig fmt: on
+    });
+}
+
+test "full proto spec file" {
+    try testExpected(
+        \\// autogen by super_proto_gen.py
+        \\
+        \\syntax = "proto3";
+        \\
+        \\package my_pkg;
+        \\
+        \\import "another.proto";
+        \\
+        \\message MsgA {
+        \\  int32 field_1 = 1;
+        \\  repeated Msg msgs = 2;
+        \\}
+        \\
+        \\// Tagged union y'all!
+        \\message Msg {
+        \\  oneof msg {
+        \\    MsgA msg_a = 1;
+        \\    MsgB msg_b = 2;
+        \\  }
+        \\}
+        \\
+        \\/*
+        \\ * Message B
+        \\ */
+        \\message MsgB {
+        \\  // Some kind
+        \\  Kind kind = 1;
+        \\  // If the message is valid
+        \\  bool valid = 2;
+        \\}
+        \\
+        \\enum Kind {
+        \\  KIND_NONE = 0;
+        \\  KIND_A = 1;
+        \\  KIND_B = 2;
+        \\}
+    , &[_]Token.Id{
+        // zig fmt: off
+
+        .keyword_syntax, .equal, .string_literal, .semicolon,
+
+        .keyword_package, .identifier, .semicolon,
+
+        .keyword_import, .string_literal, .semicolon,
+
+        .keyword_message, .identifier,
+        .l_brace,
+            .identifier, .identifier, .equal, .int_literal, .semicolon,
+            .keyword_repeated, .identifier, .identifier, .equal, .int_literal, .semicolon,
+        .r_brace,
+
+        .keyword_message, .identifier,
+        .l_brace,
+            .keyword_oneof, .identifier,
+            .l_brace,
+                .identifier, .identifier, .equal, .int_literal, .semicolon,
+                .identifier, .identifier, .equal, .int_literal, .semicolon,
+            .r_brace,
+        .r_brace,
+
+        .keyword_message, .identifier,
+        .l_brace,
+            .identifier, .identifier, .equal, .int_literal, .semicolon,
+            .identifier, .identifier, .equal, .int_literal, .semicolon,
+        .r_brace,
+
+        .keyword_enum, .identifier,
+        .l_brace,
+            .identifier, .equal, .int_literal, .semicolon,
+            .identifier, .equal, .int_literal, .semicolon,
+            .identifier, .equal, .int_literal, .semicolon,
+        .r_brace,
+
+        // zig fmt: on
     });
 }
