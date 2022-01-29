@@ -1,0 +1,31 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ${{ matrix.os }}-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos, ubuntu, windows]
+
+    steps:
+    - name: Configure git
+      if: matrix.os == 'windows'
+      run: git config --global core.autocrlf false
+
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Setup Zig
+      uses: goto-bus-stop/setup-zig@v1
+      with:
+        version: 0.9.0
+
+    - name: Test
+      run: zig build test
+
+    - name: Build binary
+      run: zig build install
