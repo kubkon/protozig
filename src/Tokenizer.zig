@@ -37,6 +37,8 @@ pub const Token = struct {
         invalid,
         l_brace,          // {
         r_brace,          // }
+        l_sbrace,         // [
+        r_sbrace,         // ]
         semicolon,        // ;
         equal,            // =
 
@@ -128,6 +130,16 @@ pub fn next(self: *Tokenizer) Token {
                 },
                 '}' => {
                     result.id = .r_brace;
+                    self.index += 1;
+                    break;
+                },
+                '[' => {
+                    result.id = .l_sbrace;
+                    self.index += 1;
+                    break;
+                },
+                ']' => {
+                    result.id = .r_sbrace;
                     self.index += 1;
                     break;
                 },
@@ -322,8 +334,8 @@ test "full proto spec file" {
         \\// Tagged union y'all!
         \\message Msg {
         \\  oneof msg {
-        \\    MsgA msg_a = 1;
-        \\    MsgB msg_b = 2;
+        \\    MsgA msg_a = 1 [json_name="msg_a"];
+        \\    MsgB msg_b = 2 [ json_name = "msg_b" ];
         \\  }
         \\}
         \\
@@ -361,8 +373,8 @@ test "full proto spec file" {
         .l_brace,
             .keyword_oneof, .identifier,
             .l_brace,
-                .identifier, .identifier, .equal, .int_literal, .semicolon,
-                .identifier, .identifier, .equal, .int_literal, .semicolon,
+                .identifier, .identifier, .equal, .int_literal, .l_sbrace, .identifier, .equal, .string_literal, .r_sbrace, .semicolon,
+                .identifier, .identifier, .equal, .int_literal, .l_sbrace, .identifier, .equal, .string_literal, .r_sbrace, .semicolon,
             .r_brace,
         .r_brace,
 
