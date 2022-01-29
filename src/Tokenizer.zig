@@ -39,6 +39,10 @@ pub const Token = struct {
         r_brace,          // }
         l_sbrace,         // [
         r_sbrace,         // ]
+        l_paren,          // (
+        r_paren,          // )
+        dot,              // .
+        comma,            // ,
         semicolon,        // ;
         equal,            // =
 
@@ -143,8 +147,28 @@ pub fn next(self: *Tokenizer) Token {
                     self.index += 1;
                     break;
                 },
+                '(' => {
+                    result.id = .l_paren;
+                    self.index += 1;
+                    break;
+                },
+                ')' => {
+                    result.id = .r_paren;
+                    self.index += 1;
+                    break;
+                },
                 ';' => {
                     result.id = .semicolon;
+                    self.index += 1;
+                    break;
+                },
+                '.' => {
+                    result.id = .dot;
+                    self.index += 1;
+                    break;
+                },
+                ',' => {
+                    result.id = .comma;
                     self.index += 1;
                     break;
                 },
@@ -164,7 +188,12 @@ pub fn next(self: *Tokenizer) Token {
                     result.id = .string_literal;
                     state = .string_literal;
                 },
-                else => {},
+                else => {
+                    result.id = .invalid;
+                    result.loc.end = self.index;
+                    self.index += 1;
+                    return result;
+                },
             },
             .slash => switch (c) {
                 '/' => {
@@ -328,7 +357,7 @@ test "full proto spec file" {
         \\
         \\message MsgA {
         \\  int32 field_1 = 1;
-        \\  repeated Msg msgs = 2;
+        \\  repeated Msg msgs = 2 [(nanopb).type=FT_POINTER];
         \\}
         \\
         \\// Tagged union y'all!
@@ -366,7 +395,7 @@ test "full proto spec file" {
         .keyword_message, .identifier,
         .l_brace,
             .identifier, .identifier, .equal, .int_literal, .semicolon,
-            .keyword_repeated, .identifier, .identifier, .equal, .int_literal, .semicolon,
+            .keyword_repeated, .identifier, .identifier, .equal, .int_literal, .l_sbrace, .l_paren, .identifier, .r_paren, .dot, .identifier, .equal, .identifier, .r_sbrace, .semicolon,
         .r_brace,
 
         .keyword_message, .identifier,
